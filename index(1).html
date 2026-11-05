@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Ultra 4K: sube la resolución de tus fotos</title>
+<style>
+:root{--red:#e1262d;--red2:#ff4a50;--tx:#f4f4f4;--mut:#9a9a9a;color-scheme:dark;box-sizing:border-box;
+padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;min-height:100%;background:#000;color:var(--tx);font:500 15px/1.4 system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif}
+header{padding:12px 16px;border-bottom:2px solid var(--red)}
+h1{margin:0;font-size:22px;font-weight:800;letter-spacing:-.02em}
+h1 i{display:inline-block;width:10px;height:10px;background:var(--red);border-radius:50%;margin-right:8px}
+main{max-width:560px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.b{background:var(--red);color:#fff;border:0;border-radius:12px;padding:14px;font:700 16px system-ui,-apple-system,Arial,sans-serif;cursor:pointer;width:100%}
+.b.alt{background:#1c1c1c;border:1px solid #363636;font-weight:600}
+.b:disabled{opacity:.4}
+.b:focus-visible{outline:2px solid var(--red2);outline-offset:2px}
+.empty{text-align:center;padding:48px 8px;display:flex;flex-direction:column;gap:14px;align-items:center}
+.empty h2{margin:0;font-size:26px;line-height:1.1;letter-spacing:-.02em}
+.empty p{margin:0;color:var(--mut);max-width:30ch}
+.empty .b{max-width:260px}
+[hidden]{display:none!important}
+.work{display:flex;flex-direction:column;gap:12px}
+img.prev,canvas.out{width:100%;height:auto;max-height:50vh;object-fit:contain;background:#0a0a0a;border:1px solid #2c2c2c;border-radius:10px}
+.info{margin:0;color:var(--mut);font-size:14px}
+.info b{color:var(--tx)}
+.bar{height:8px;background:#1c1c1c;border-radius:6px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--red)}
+.modal{position:fixed;inset:0;background:#000e;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:20px;z-index:9;text-align:center}
+.modal img{max-width:100%;max-height:68%;border:1px solid var(--red)}
+</style>
+</head>
+<body>
+<header><h1><i></i>Ultra 4K</h1></header>
+<main>
+  <div class="empty" id="empty">
+    <h2>Elige una foto de tu galería</h2>
+    <p>La app la pasa a resolución 4K con el mismo encuadre y sin cambiar su contenido.</p>
+    <button class="b" id="pick">Elegir foto</button>
+  </div>
+
+  <div class="work" id="work" hidden>
+    <img class="prev" id="prev" alt="Foto original">
+    <canvas class="out" id="out" hidden></canvas>
+    <p class="info" id="info"></p>
+    <div class="bar" id="bar" hidden><i id="fill"></i></div>
+    <button class="b" id="go">Subir calidad a 4K</button>
+    <button class="b" id="save" hidden>Guardar en Fotos</button>
+    <button class="b alt" id="again">Elegir otra foto</button>
+  </div>
+</main>
+
+<input type="file" id="file" accept="image/*" hidden>
+<div class="modal" id="modal">
+  <img id="shot" alt="Foto en 4K">
+  <div>Mantén presionada la imagen y elige Guardar en Fotos.</div>
+  <button class="b" id="close" style="max-width:260px">Cerrar</button>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+const T=3840;           /* lado largo de 4K (UHD) */
+let img=null,blob=null;
+
+$('#pick').onclick=$('#again').onclick=()=>$('#file').click();
+$('#file').onchange=e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  const im=new Image();
+  im.onload=()=>{img=im;show()};
+  im.onerror=()=>alert('No pude abrir esa foto. Prueba con otra.');
+  im.src=URL.createObjectURL(f)};
+
+function show(){
+  blob=null;
+  $('#empty').hidden=true;$('#work').hidden=false;
+  $('#prev').hidden=false;$('#prev').src=img.src;
+  $('#out').hidden=true;$('#save').hidden=true;$('#bar').hidden=true;
+  const w=img.naturalWidth,h=img.naturalHeight,big=Math.max(w,h)>=T;
+  $('#info').innerHTML='Original: <b>'+w+' × '+h+'</b>'+(big
+    ?'<br>Esta foto ya tiene 4K o más, no necesita subirse.'
+    :'<br>Quedará en: <b>'+Math.round(w*T/Math.max(w,h))+' × '+Math.round(h*T/Math.max(w,h))+'</b> (misma proporción)');
+  $('#go').disabled=big;$('#go').hidden=false}
+
+/* Lanczos de 3 lóbulos: reescala sin inventar contenido */
+function lz(x){if(x===0)return 1;if(x<=-3||x>=3)return 0;const p=Math.PI*x;return 3*Math.sin(p)*Math.sin(p/3)/(p*p)}
+function weights(sl,dl){
+  const s=sl/dl,I=new Int32Array(dl*6),W=new Float32Array(dl*6);
+  for(let i=0;i<dl;i++){
+    const c=(i+.5)*s-.5,st=Math.floor(c)-2;let sum=0;
+    for(let k=0;k<6;k++){const j=st+k,w=lz(c-j);W[i*6+k]=w;sum+=w;I[i*6+k]=Math.min(sl-1,Math.max(0,j))}
+    for(let k=0;k<6;k++)W[i*6+k]/=sum}
+  return{i:I,w:W}}
+const tick=()=>new Promise(r=>requestAnimationFrame(()=>setTimeout(r)));
+
+$('#go').onclick=async()=>{
+  const sw=img.naturalWidth,sh=img.naturalHeight,k=T/Math.max(sw,sh);
+  const dw=Math.round(sw*k),dh=Math.round(sh*k);
+  $('#go').disabled=true;$('#bar').hidden=false;$('#fill').style.width='0';
+  $('#info').textContent='Procesando… no cierres la pantalla.';
+  await tick();
+  try{
+    const c=document.createElement('canvas');c.width=sw;c.height=sh;
+    const cx=c.getContext('2d',{willReadFrequently:true});cx.drawImage(img,0,0);
+    const src=cx.getImageData(0,0,sw,sh).data;
+    const wx=weights(sw,dw),wy=weights(sh,dh),cache=new Map();
+    const hrow=y=>{let r=cache.get(y);if(r)return r;
+      r=new Float32Array(dw*3);const row=y*sw;
+      for(let x=0;x<dw;x++){let a=0,g=0,b=0;
+        for(let q=0;q<6;q++){const w=wx.w[x*6+q],i=(row+wx.i[x*6+q])*4;a+=w*src[i];g+=w*src[i+1];b+=w*src[i+2]}
+        r[x*3]=a;r[x*3+1]=g;r[x*3+2]=b}
+      cache.set(y,r);return r};
+    const out=new ImageData(dw,dh),od=out.data;
+    for(let y=0;y<dh;y++){
+      const rows=[];for(let q=0;q<6;q++)rows.push(hrow(wy.i[y*6+q]));
+      const ws=wy.w.subarray(y*6,y*6+6);
+      for(let x=0;x<dw;x++){let a=0,g=0,b=0;const j=x*3;
+        for(let q=0;q<6;q++){const w=ws[q],r=rows[q];a+=w*r[j];g+=w*r[j+1];b+=w*r[j+2]}
+        const o=(y*dw+x)*4;od[o]=a;od[o+1]=g;od[o+2]=b;od[o+3]=255}
+      const lo=wy.i[y*6];for(const key of cache.keys())if(key<lo)cache.delete(key);
+      if(y%40===0){$('#fill').style.width=(y/dh*100)+'%';await tick()}}
+    const oc=$('#out');oc.width=dw;oc.height=dh;oc.getContext('2d').putImageData(out,0,0);
+    blob=await new Promise(r=>oc.toBlob(r,'image/jpeg',.95));
+    $('#fill').style.width='100%';
+    $('#prev').hidden=true;oc.hidden=false;$('#save').hidden=false;$('#go').hidden=true;
+    $('#info').innerHTML='Listo: <b>'+dw+' × '+dh+'</b> (4K), misma proporción que la original.';
+  }catch(e){
+    $('#info').textContent='No alcanzó la memoria del teléfono para esta foto. Cierra otras apps e inténtalo otra vez.';
+    $('#go').disabled=false}
+};
+
+$('#save').onclick=async()=>{
+  if(!blob)return;
+  const f=new File([blob],'foto-4k.jpg',{type:'image/jpeg'});
+  try{if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f]});return}}
+  catch(err){if(err&&err.name==='AbortError')return}
+  $('#shot').src=URL.createObjectURL(blob);$('#modal').style.display='flex'};
+$('#close').onclick=()=>{$('#modal').style.display='none'};
+</script>
+</body>
+</html>
