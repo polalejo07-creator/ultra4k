@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Ultra 4K: luz, ruido y nitidez</title>
+<style>
+:root{--red:#e1262d;--red2:#ff4a50;--tx:#f4f4f4;--mut:#9a9a9a;color-scheme:dark;box-sizing:border-box;
+padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;min-height:100%;background:#000;color:var(--tx);font:500 15px/1.4 system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif}
+header{padding:12px 16px;border-bottom:2px solid var(--red)}
+h1{margin:0;font-size:22px;font-weight:800;letter-spacing:-.02em}
+h1 i{display:inline-block;width:10px;height:10px;background:var(--red);border-radius:50%;margin-right:8px}
+main{max-width:560px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.b{background:var(--red);color:#fff;border:0;border-radius:12px;padding:14px;font:700 16px system-ui,-apple-system,Arial,sans-serif;cursor:pointer;width:100%}
+.b.alt{background:#1c1c1c;border:1px solid #363636;font-weight:600}
+.b:disabled{opacity:.4}
+.b:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--red2);outline-offset:2px}
+.empty{text-align:center;padding:48px 8px;display:flex;flex-direction:column;gap:14px;align-items:center}
+.empty h2{margin:0;font-size:26px;line-height:1.1;letter-spacing:-.02em}
+.empty p{margin:0;color:var(--mut);max-width:30ch}
+.empty .b{max-width:260px}
+[hidden]{display:none!important}
+.work{display:flex;flex-direction:column;gap:12px}
+img.prev,canvas.out{width:100%;height:auto;max-height:50vh;object-fit:contain;background:#0a0a0a;border:1px solid #2c2c2c;border-radius:10px}
+.info{margin:0;color:var(--mut);font-size:14px}
+.info b{color:var(--tx)}
+.f{display:flex;align-items:center;gap:10px;color:var(--mut)}
+.f span{width:84px;flex:none}
+.f select{flex:1;min-width:0;background:#1c1c1c;color:var(--tx);border:1px solid #363636;border-radius:10px;padding:10px;font:inherit}
+.f input{flex:1;min-width:0;accent-color:var(--red)}
+.bar{height:8px;background:#1c1c1c;border-radius:6px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--red)}
+.note{margin:0;color:var(--mut);font-size:13px}
+.modal{position:fixed;inset:0;background:#000e;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:20px;z-index:9;text-align:center}
+.modal img{max-width:100%;max-height:68%;border:1px solid var(--red)}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@upscalerjs/default-model@1.0.0/dist/umd/index.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@upscalerjs/esrgan-slim@1.0.0/dist/umd/models/esrgan-slim/src/x2/index.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@upscalerjs/esrgan-slim@1.0.0/dist/umd/models/esrgan-slim/src/x3/index.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@upscalerjs/esrgan-slim@1.0.0/dist/umd/models/esrgan-slim/src/x4/index.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/upscaler@1.0.0/dist/browser/umd/upscaler.min.js"></script>
+</head>
+<body>
+<header><h1><i></i>Ultra 4K</h1></header>
+<main>
+  <div class="empty" id="empty">
+    <h2>Elige una foto de tu galería</h2>
+    <p>Sube su resolución a 4K y la deja más nítida, con el mismo encuadre.</p>
+    <button class="b" id="pick">Elegir foto</button>
+  </div>
+
+  <div class="work" id="work" hidden>
+    <img class="prev" id="prev" alt="Foto original">
+    <canvas class="out" id="out" hidden></canvas>
+    <p class="info" id="info"></p>
+    <label class="f"><span>Modo</span>
+      <select id="mode">
+        <option value="sharp">Fiel: luz, ruido y nitidez</option>
+        <option value="ai">IA pequeña: detalle (experimental)</option>
+      </select></label>
+    <label class="f"><span>Quitar ruido</span><input type="range" id="nz" min="0" max="100" value="70" aria-label="Quitar ruido"></label>
+    <label class="f"><span>Subir luz</span><input type="range" id="lt" min="0" max="100" value="80" aria-label="Subir luz"></label>
+    <label class="f"><span>Nitidez</span><input type="range" id="amt" min="0" max="100" value="40" aria-label="Nitidez"></label>
+    <div class="bar" id="bar" hidden><i id="fill"></i></div>
+    <button class="b" id="go">Subir calidad a 4K</button>
+    <button class="b" id="save" hidden>Guardar en Fotos</button>
+    <button class="b alt" id="again">Elegir otra foto</button>
+    <p class="note">La IA dibuja bordes y texturas plausibles donde la cámara perdió detalle, así que puede cambiar rasgos finos en rostros o texto. Para respetar la foto al máximo usa el modo Fiel.</p>
+  </div>
+</main>
+
+<input type="file" id="file" accept="image/*" hidden>
+<div class="modal" id="modal">
+  <img id="shot" alt="Foto en 4K">
+  <div>Mantén presionada la imagen y elige Guardar en Fotos.</div>
+  <button class="b" id="close" style="max-width:260px">Cerrar</button>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+const T=3840,AI_MAX=1920;
+let img=null,blob=null;
+
+$('#pick').onclick=$('#again').onclick=()=>$('#file').click();
+$('#file').onchange=e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  const im=new Image();
+  im.onload=()=>{img=im;show()};
+  im.onerror=()=>alert('No pude abrir esa foto. Prueba con otra.');
+  im.src=URL.createObjectURL(f)};
+$('#mode').onchange=()=>img&&info();
+
+function plan(){
+  const sw=img.naturalWidth,sh=img.naturalHeight,long=Math.max(sw,sh);
+  let mode=$('#mode').value,dw=sw,dh=sh;
+  if(long<T){const k=T/long;dw=Math.round(sw*k);dh=Math.round(sh*k)}
+  const forced=mode==='ai'&&long>AI_MAX;if(forced)mode='sharp';
+  return{sw,sh,long,dw,dh,mode,forced,tooBig:sw*sh>16e6}}
+function info(){
+  const p=plan();
+  let t='Original: <b>'+p.sw+' × '+p.sh+'</b><br>';
+  if(p.tooBig)t+='Esta foto es demasiado grande para procesarla en el navegador.';
+  else if(p.long>=T)t+='Ya tiene 4K o más: solo se afina la nitidez, sin cambiar el tamaño.';
+  else t+='Quedará en: <b>'+p.dw+' × '+p.dh+'</b> (misma proporción)';
+  if(p.forced&&!p.tooBig)t+='<br>Con la IA la foto original debe medir hasta '+AI_MAX+' px de lado; aquí se usará el modo Fiel.';
+  else if(p.mode==='ai')t+='<br>La IA tarda: de 1 a 3 minutos en el iPhone. Deja la pantalla encendida.';
+  if(p.sw*p.sh>6e6&&!p.tooBig)t+='<br>Foto grande: se afina sin quitar ruido ni subir luz.';
+  $('#info').innerHTML=t;$('#go').disabled=p.tooBig}
+function show(){
+  blob=null;$('#empty').hidden=true;$('#work').hidden=false;
+  $('#prev').hidden=false;$('#prev').src=img.src;
+  $('#out').hidden=true;$('#save').hidden=true;$('#bar').hidden=true;$('#go').hidden=false;info()}
+
+const tick=()=>new Promise(r=>requestAnimationFrame(()=>setTimeout(r)));
+const prog=f=>{$('#fill').style.width=Math.min(100,f*100)+'%'};
+const msg=t=>{$('#info').textContent=t};
+const loadImg=u=>new Promise((ok,no)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=no;i.src=u});
+
+/* Reescalado Lanczos (3 lóbulos) para el ajuste final de tamaño */
+function lz(x){if(x===0)return 1;if(x<=-3||x>=3)return 0;const p=Math.PI*x;return 3*Math.sin(p)*Math.sin(p/3)/(p*p)}
+function weights(sl,dl){
+  const s=sl/dl,I=new Int32Array(dl*6),W=new Float32Array(dl*6);
+  for(let i=0;i<dl;i++){const c=(i+.5)*s-.5,st=Math.floor(c)-2;let sum=0;
+    for(let k=0;k<6;k++){const j=st+k,w=lz(c-j);W[i*6+k]=w;sum+=w;I[i*6+k]=Math.min(sl-1,Math.max(0,j))}
+    for(let k=0;k<6;k++)W[i*6+k]/=sum}
+  return{i:I,w:W}}
+async function lanczos(c,dw,dh,p0,p1){
+  const sw=c.width,sh=c.height,src=c.getContext('2d').getImageData(0,0,sw,sh).data;
+  const wx=weights(sw,dw),wy=weights(sh,dh),cache=new Map(),out=new ImageData(dw,dh),od=out.data;
+  const hrow=y=>{let r=cache.get(y);if(r)return r;r=new Float32Array(dw*3);const row=y*sw;
+    for(let x=0;x<dw;x++){let a=0,g=0,b=0;
+      for(let q=0;q<6;q++){const w=wx.w[x*6+q],i=(row+wx.i[x*6+q])*4;a+=w*src[i];g+=w*src[i+1];b+=w*src[i+2]}
+      r[x*3]=a;r[x*3+1]=g;r[x*3+2]=b}
+    cache.set(y,r);return r};
+  for(let y=0;y<dh;y++){
+    const rows=[];for(let q=0;q<6;q++)rows.push(hrow(wy.i[y*6+q]));
+    const ws=wy.w.subarray(y*6,y*6+6);
+    for(let x=0;x<dw;x++){let a=0,g=0,b=0;const j=x*3;
+      for(let q=0;q<6;q++){const w=ws[q],r=rows[q];a+=w*r[j];g+=w*r[j+1];b+=w*r[j+2]}
+      const o=(y*dw+x)*4;od[o]=a;od[o+1]=g;od[o+2]=b;od[o+3]=255}
+    const lo=wy.i[y*6];for(const k of cache.keys())if(k<lo)cache.delete(k);
+    if(y%40===0){prog(p0+(p1-p0)*y/dh);await tick()}}
+  return out}
+
+/* Nitidez real: máscara de enfoque sobre la luminosidad, con límite de halos */
+function blur(s,w,h,r){
+  const t=new Uint8ClampedArray(s.length),o=new Uint8ClampedArray(s.length),k=2*r+1;
+  for(let y=0;y<h;y++){const row=y*w;let sum=0;
+    for(let x=-r;x<=r;x++)sum+=s[row+Math.min(w-1,Math.max(0,x))];
+    for(let x=0;x<w;x++){t[row+x]=sum/k;sum+=s[row+Math.min(w-1,x+r+1)]-s[row+Math.max(0,x-r)]}}
+  for(let x=0;x<w;x++){let sum=0;
+    for(let y=-r;y<=r;y++)sum+=t[Math.min(h-1,Math.max(0,y))*w+x];
+    for(let y=0;y<h;y++){o[y*w+x]=sum/k;sum+=t[Math.min(h-1,y+r+1)*w+x]-t[Math.max(0,y-r)*w+x]}}
+  return o}
+function sharpen(d,w,h,amt,r){
+  const n=w*h,Y=new Uint8ClampedArray(n);
+  for(let i=0;i<n;i++)Y[i]=(d[i*4]*77+d[i*4+1]*150+d[i*4+2]*29)>>8;
+  const B=blur(blur(Y,w,h,r),w,h,r);
+  for(let i=0;i<n;i++){
+    const df=Y[i]-B[i],ad=Math.abs(df);if(ad<=3)continue;
+    let add=df*amt*Math.min(1,(ad-3)/9);add=Math.max(-30,Math.min(30,add));
+    const j=i*4;d[j]+=add;d[j+1]+=add;d[j+2]+=add}}
+
+/* Luz y ruido: recupera detalle real escondido en sombras y grano */
+/* Luz y ruido: funciones puras sobre RGBA (Uint8ClampedArray) */
+function boxBlurF(s,w,h,r){const t=new Float32Array(s.length),o=new Float32Array(s.length),k=2*r+1;
+  for(let y=0;y<h;y++){const row=y*w;let sum=0;
+    for(let x=-r;x<=r;x++)sum+=s[row+Math.min(w-1,Math.max(0,x))];
+    for(let x=0;x<w;x++){t[row+x]=sum/k;sum+=s[row+Math.min(w-1,x+r+1)]-s[row+Math.max(0,x-r)]}}
+  for(let x=0;x<w;x++){let sum=0;
+    for(let y=-r;y<=r;y++)sum+=t[Math.min(h-1,Math.max(0,y))*w+x];
+    for(let y=0;y<h;y++){o[y*w+x]=sum/k;sum+=t[Math.min(h-1,y+r+1)*w+x]-t[Math.max(0,y-r)*w+x]}}
+  return o}
+/* d: RGBA. noise 0..1, light 0..1. Devuelve info de lo aplicado. */
+function enhance(d,w,h,noise,light){
+  const n=w*h,Y=new Float32Array(n),Cb=new Float32Array(n),Cr=new Float32Array(n);
+  for(let i=0;i<n;i++){const r=d[i*4],g=d[i*4+1],b=d[i*4+2];
+    Y[i]=.299*r+.587*g+.114*b;Cb[i]=(b-Y[i])*.564;Cr[i]=(r-Y[i])*.713}
+  let Yo=Y,Cbo=Cb,Cro=Cr;
+  if(noise>0){
+    const R=2,sr=5+15*noise,L=new Float32Array(256);
+    for(let i=0;i<256;i++)L[i]=Math.exp(-(i*i)/(2*sr*sr));
+    const sw=[];for(let dy=-R;dy<=R;dy++)for(let dx=-R;dx<=R;dx++)sw.push([dx,dy,Math.exp(-(dx*dx+dy*dy)/(2*1.6*1.6))]);
+    for(let pass=0;pass<2;pass++){
+      const G=boxBlurF(Yo,w,h,1),nY=new Float32Array(n),nB=new Float32Array(n),nR=new Float32Array(n);
+      for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=y*w+x,gc=G[i];let a=0,b=0,c=0,ws=0;
+        for(let q=0;q<sw.length;q++){const xx=x+sw[q][0],yy=y+sw[q][1];if(xx<0||xx>=w||yy<0||yy>=h)continue;
+          const j=yy*w+xx,dd=Math.abs(G[j]-gc),wt=sw[q][2]*L[dd>255?255:dd|0];
+          a+=wt*Yo[j];b+=wt*Cbo[j];c+=wt*Cro[j];ws+=wt}
+        nY[i]=a/ws;nB[i]=b/ws;nR[i]=c/ws}
+      Yo=nY;Cbo=nB;Cro=nR}
+    Cbo=boxBlurF(Cbo,w,h,3);Cro=boxBlurF(Cro,w,h,3)}
+  let g=1,lo=0,hi=255;
+  if(light>0){
+    const hist=new Float64Array(256);for(let i=0;i<n;i++)hist[Math.max(0,Math.min(255,Yo[i]|0))]++;
+    let c=0;lo=0;for(let v=0;v<256;v++){c+=hist[v];if(c>n*.005){lo=v;break}}
+    c=0;hi=255;for(let v=255;v>=0;v--){c+=hist[v];if(c>n*.005){hi=v;break}}
+    if(hi-lo<30){lo=0;hi=255}
+    lo*=light;hi=255-(255-hi)*light;
+    const mean=g=>{let s=0;for(let v=0;v<256;v++){const t=Math.min(1,Math.max(0,(v-lo)/(hi-lo)));s+=hist[v]*Math.pow(t,g)}return s/n};
+    let a=.3,b=1;if(mean(1)>=.42){g=1}else{for(let k=0;k<14;k++){const m=(a+b)/2;if(mean(m)>.42)a=m;else b=m}g=1+((a+b)/2-1)*light}}
+  for(let i=0;i<n;i++){
+    let y=Yo[i];const t=Math.min(1,Math.max(0,(y-lo)/(hi-lo)));let y2=255*Math.pow(t,g);
+    const gain=y>1?Math.min(4,y2/y):1,sat=1+.35*Math.min(1,(gain-1)/2);
+    const cb=Cbo[i]*sat,cr=Cro[i]*sat,r=y2+cr/.713,bl=y2+cb/.564,gr=(y2-.299*r-.114*bl)/.587;
+    d[i*4]=r;d[i*4+1]=gr;d[i*4+2]=bl}
+  return g}
+
+/* Proceso principal */
+$('#go').onclick=async()=>{
+  const p=plan();if(p.tooBig)return;
+  $('#go').disabled=true;$('#bar').hidden=false;prog(0);
+  let wake=null;try{wake=await navigator.wakeLock.request('screen')}catch(e){}
+  try{
+    const nz=$('#nz').value/100,lt=$('#lt').value/100,pre=(nz>0||lt>0)&&p.sw*p.sh<=6e6;
+    const s=document.createElement('canvas');s.width=p.sw;s.height=p.sh;
+    const sx=s.getContext('2d',{willReadFrequently:true});sx.drawImage(img,0,0);
+    if(pre){msg('Mejorando luz y ruido…');await tick();
+      const im=sx.getImageData(0,0,p.sw,p.sh);enhance(im.data,p.sw,p.sh,nz,lt);sx.putImageData(im,0,0)}
+    const c=document.createElement('canvas');
+    if(p.mode==='ai'){
+      msg('Cargando la IA… la primera vez descarga el modelo (menos de 1 MB).');await tick();
+      await tf.ready();
+      const sc=Math.min(4,Math.max(2,Math.ceil(T/p.long)));
+      const up=new Upscaler({model:{2:ESRGANSlim2x,3:ESRGANSlim3x,4:ESRGANSlim4x}[sc]});
+      msg('Recuperando detalle con IA… puede tardar unos minutos.');
+      const url=await up.upscale(pre?s.toDataURL('image/png'):img,{patchSize:64,padding:4,progress:f=>prog(f*.8)});
+      try{await up.dispose()}catch(e){}
+      const ai=await loadImg(url);
+      c.width=ai.naturalWidth;c.height=ai.naturalHeight;c.getContext('2d').drawImage(ai,0,0);
+    }else{
+      msg('Reescalando…');await tick();
+      c.width=p.sw;c.height=p.sh;c.getContext('2d').drawImage(s,0,0)}
+    let id;
+    if(c.width===p.dw&&c.height===p.dh)id=c.getContext('2d').getImageData(0,0,p.dw,p.dh);
+    else if(c.width<p.dw){msg('Ajustando al tamaño 4K…');id=await lanczos(c,p.dw,p.dh,p.mode==='ai'?.8:0,.93)}
+    else{const d=document.createElement('canvas');d.width=p.dw;d.height=p.dh;const x=d.getContext('2d');
+      x.imageSmoothingQuality='high';x.drawImage(c,0,0,p.dw,p.dh);id=x.getImageData(0,0,p.dw,p.dh)}
+    const a=$('#amt').value/100*(p.mode==='ai'?.6:.9);
+    if(a>0){msg('Afinando detalles…');prog(.95);await tick();
+      sharpen(id.data,p.dw,p.dh,a,Math.min(4,Math.max(1,Math.round(p.dw/p.sw*.6))))}
+    const oc=$('#out');oc.width=p.dw;oc.height=p.dh;oc.getContext('2d').putImageData(id,0,0);
+    blob=await new Promise(r=>oc.toBlob(r,'image/jpeg',.95));
+    prog(1);$('#prev').hidden=true;oc.hidden=false;$('#save').hidden=false;$('#go').hidden=true;
+    $('#info').innerHTML='Listo: <b>'+p.dw+' × '+p.dh+'</b>, misma proporción que la original.';
+  }catch(e){
+    console.error(e);
+    msg(p.mode==='ai'?'No pude usar la IA (revisa tu conexión o la memoria del teléfono). Prueba el modo Fiel.':'No alcanzó la memoria del teléfono para esta foto. Cierra otras apps e inténtalo otra vez.');
+    $('#go').disabled=false}
+  if(wake)try{await wake.release()}catch(e){}
+};
+
+$('#save').onclick=async()=>{
+  if(!blob)return;
+  const f=new File([blob],'foto-4k.jpg',{type:'image/jpeg'});
+  try{if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f]});return}}
+  catch(err){if(err&&err.name==='AbortError')return}
+  $('#shot').src=URL.createObjectURL(blob);$('#modal').style.display='flex'};
+$('#close').onclick=()=>{$('#modal').style.display='none'};
+</script>
+</body>
+</html>
